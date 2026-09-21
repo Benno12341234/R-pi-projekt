@@ -1,0 +1,28 @@
+[Unit]
+Description=AI Model Router Service
+After=network-online.target
+Wants=network-online.target
+
+# If it keeps crashing (e.g. bad API key), give up after 5 restarts in 10
+# minutes instead of restarting forever - a crash loop must not turn into
+# an endless string of paid API calls.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/R-pi-projekt
+EnvironmentFile=/home/pi/R-pi-projekt/.env
+
+# Replace this with your real entrypoint once you have one - this just
+# proves the service, restart behaviour, and .env loading work.
+ExecStart=/home/pi/R-pi-projekt/.venv/bin/python examples/model_routing_demo.py
+
+# Restart only on crash/error, not on a clean exit - so a script that
+# finishes normally doesn't get relaunched (and re-billed) in a loop.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

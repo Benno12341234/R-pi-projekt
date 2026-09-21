@@ -1,0 +1,9 @@
+# Starts/stops device-agent.service exactly while the USB-C gadget link
+# (interface usb0, set up by scripts/setup-usb-gadget.sh) is up - i.e. while
+# the Pi is actually plugged into a host computer via USB-C.
+#
+# Install: sudo cp udev/99-usb-gadget-link.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload
+
+SUBSYSTEM=="net", KERNEL=="usb0", ACTION=="add", RUN+="/usr/bin/systemctl start device-agent.service"
+SUBSYSTEM=="net", KERNEL=="usb0", ACTION=="remove", RUN+="/usr/bin/systemctl stop device-agent.service"

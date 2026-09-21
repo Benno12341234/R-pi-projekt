@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Pi AI Console
+Comment=Touchscreen UI to give the AI voice commands and confirm proposed actions
+Exec=/home/pi/R-pi-projekt/.venv/bin/python -m device_agent.display_ui
+X-GNOME-Autostart-enabled=true

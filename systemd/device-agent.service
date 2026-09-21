@@ -1,0 +1,15 @@
+[Unit]
+Description=Device automation agent (active only while the USB-C gadget link is up)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/R-pi-projekt
+EnvironmentFile=/home/pi/R-pi-projekt/.env
+ExecStart=/home/pi/R-pi-projekt/.venv/bin/python -m device_agent
+
+# Deliberately no [Install] section / WantedBy: this service is never
+# enabled at boot. It is only ever started and stopped by the udev rule in
+# udev/99-usb-gadget-link.rules, exactly while usb0 (the USB-C link to a
+# host computer) exists.
