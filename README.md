@@ -60,3 +60,35 @@ out at `/home/pi/R-pi-projekt` - adjust `User=`, `WorkingDirectory=`, and
 (`StartLimitBurst`/`StartLimitIntervalSec`) so a broken deploy can't turn
 into an endless, paid, restart loop. `ExecStart` currently points at the
 demo script - swap it for your real entrypoint once you have one.
+
+## USB-C Device Agent
+
+The idea: plug the Pi into one of your own computers via USB-C, and it
+should be able to work on that computer via an AI, but only after you
+approve it. This is scaffolded but **not fully wired up yet** - two things
+are still open, and the actual "make a change" step is deliberately not
+implemented until they're answered:
+
+- **Action scope** - can the AI propose anything, or only from a fixed set
+  of allowed actions (e.g. "sync this folder", "run this one script")?
+- **Who approves** - you, on the Pi (e.g. over SSH), or the user sitting at
+  the connected computer?
+
+What's built so far:
+
+- **`scripts/setup-usb-gadget.sh`** - run once on the Pi (needs a USB-C/OTG
+  data port: Pi Zero 2 W, Pi 4, Pi 5). Turns the port into a USB gadget
+  (Ethernet-over-USB), so plugging it into a computer creates a network
+  link to the Pi at `192.168.7.2` - instead of the port just being power.
+- **`udev/99-usb-gadget-link.rules`** - starts `device-agent.service`
+  the moment that link comes up, stops it the moment the cable is pulled.
+  Install with `sudo cp udev/99-usb-gadget-link.rules /etc/udev/rules.d/ && sudo udevadm control --reload`.
+- **`device_agent/`** - the service itself. Right now it just logs "link
+  up" and waits; it makes no changes anywhere. `pending_actions.py` is an
+  approval queue (propose -> pending -> approved/denied) ready for real
+  actions to be plugged into once the scope is decided; `cli_approve.py`
+  is today's approval point - run `python -m device_agent.cli_approve` on
+  the Pi over SSH to see and approve/deny anything proposed.
+
+This is for your own computers only - not for plugging into devices you
+don't own or control.
