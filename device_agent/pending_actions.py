@@ -1,9 +1,10 @@
 """Approval queue for actions the AI wants to take on a connected device.
 
-This only records proposals and their approve/deny status - nothing here
-executes anything. Wiring an actual action up to `propose()` is deliberately
-not done yet: what the AI is allowed to propose, and who approves it, isn't
-decided yet (see README.md - "USB-C Device Agent" section)."""
+Approval happens either on the touchscreen (display_ui.py) or via SSH
+(cli_approve.py) - both just call resolve(). Once approved, __main__.py
+(running only while the USB-C link is up) picks the action up and marks it
+executed. Actually acting on the connected host is still not implemented -
+see README.md "USB-C Device Agent" for what's open."""
 
 import json
 import time
@@ -19,7 +20,7 @@ _STORE = Path("/var/lib/device-agent/pending_actions.json")
 class PendingAction:
     id: str
     description: str
-    status: str  # "pending" | "approved" | "denied"
+    status: str  # "pending" | "approved" | "denied" | "executed"
     created_at: float
 
 
@@ -51,6 +52,10 @@ def list_pending() -> List[PendingAction]:
     return [PendingAction(**a) for a in _load() if a["status"] == "pending"]
 
 
+def list_approved() -> List[PendingAction]:
+    return [PendingAction(**a) for a in _load() if a["status"] == "approved"]
+
+
 def resolve(action_id: str, approved: bool) -> Optional[PendingAction]:
     actions = _load()
     for a in actions:
@@ -59,3 +64,11 @@ def resolve(action_id: str, approved: bool) -> Optional[PendingAction]:
             _save(actions)
             return PendingAction(**a)
     return None
+
+
+def mark_executed(action_id: str) -> None:
+    actions = _load()
+    for a in actions:
+        if a["id"] == action_id:
+            a["status"] = "executed"
+    _save(actions)

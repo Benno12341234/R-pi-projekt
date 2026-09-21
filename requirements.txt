@@ -1,2 +1,4 @@
 anthropic
 openai
+sounddevice
+vosk

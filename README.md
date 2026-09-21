@@ -63,32 +63,75 @@ demo script - swap it for your real entrypoint once you have one.
 
 ## USB-C Device Agent
 
-The idea: plug the Pi into one of your own computers via USB-C, and it
-should be able to work on that computer via an AI, but only after you
-approve it. This is scaffolded but **not fully wired up yet** - two things
-are still open, and the actual "make a change" step is deliberately not
-implemented until they're answered:
+The idea: plug the Pi into one of your own computers via USB-C. You give
+it voice commands on a touchscreen attached to the Pi, the AI proposes one
+concrete action, and it only happens once you tap Confirm on that same
+screen. This is for your own computers only - not for plugging into
+devices you don't own or control.
 
-- **Action scope** - can the AI propose anything, or only from a fixed set
-  of allowed actions (e.g. "sync this folder", "run this one script")?
-- **Who approves** - you, on the Pi (e.g. over SSH), or the user sitting at
-  the connected computer?
+**Still open / not implemented yet:** actually reaching over the USB-C
+link and changing something on the connected host. Everything up to and
+including "confirmed on the touchscreen, queued as approved" works;
+`device_agent/__main__.py` currently only logs what it *would* run. What
+exactly the AI is allowed to do there (fixed allow-listed actions vs.
+free-form) still needs to be decided before that part gets built.
 
-What's built so far:
+### Hardware
 
-- **`scripts/setup-usb-gadget.sh`** - run once on the Pi (needs a USB-C/OTG
-  data port: Pi Zero 2 W, Pi 4, Pi 5). Turns the port into a USB gadget
-  (Ethernet-over-USB), so plugging it into a computer creates a network
-  link to the Pi at `192.168.7.2` - instead of the port just being power.
-- **`udev/99-usb-gadget-link.rules`** - starts `device-agent.service`
-  the moment that link comes up, stops it the moment the cable is pulled.
-  Install with `sudo cp udev/99-usb-gadget-link.rules /etc/udev/rules.d/ && sudo udevadm control --reload`.
-- **`device_agent/`** - the service itself. Right now it just logs "link
-  up" and waits; it makes no changes anywhere. `pending_actions.py` is an
-  approval queue (propose -> pending -> approved/denied) ready for real
-  actions to be plugged into once the scope is decided; `cli_approve.py`
-  is today's approval point - run `python -m device_agent.cli_approve` on
-  the Pi over SSH to see and approve/deny anything proposed.
+- **Display:** a touchscreen, so commands and confirmation happen on the
+  Pi itself. The official Raspberry Pi Touch Display (DSI, no separate
+  power/HDMI cable needed) is the easiest match; any HDMI touchscreen
+  works too.
+- **Audio:** a USB microphone and a speaker (USB, or the Pi's 3.5mm jack /
+  HDMI audio). USB mics avoid the ALSA config hassle that I2S mic HATs
+  need.
+- A Pi model with a USB-C/OTG-capable data port for the host link: Pi
+  Zero 2 W, Pi 4, or Pi 5.
 
-This is for your own computers only - not for plugging into devices you
-don't own or control.
+### Setup
+
+```bash
+sudo apt install python3-tk espeak-ng portaudio19-dev
+.venv/bin/pip install -r requirements.txt
+
+# Vosk speech-to-text model (German example - pick your language):
+# https://alphacephei.com/vosk/models
+wget https://alphacephei.com/vosk/models/vosk-model-small-de-0.15.zip
+unzip vosk-model-small-de-0.15.zip -d /home/pi/
+
+# USB-C gadget link to the host computer
+sudo ./scripts/setup-usb-gadget.sh
+sudo cp udev/99-usb-gadget-link.rules /etc/udev/rules.d/
+sudo udevadm control --reload
+sudo cp systemd/device-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# Touchscreen UI, always running (independent of the USB-C link)
+mkdir -p ~/.config/autostart
+cp desktop/pi-ai-console.desktop ~/.config/autostart/
+```
+
+Reboot. The touchscreen UI starts automatically on the desktop; hold its
+button to speak a command, review the proposed action, and tap Confirm or
+Deny - never by voice, on purpose, so background noise or a misheard word
+can't approve anything by itself.
+
+### What's built
+
+- **`scripts/setup-usb-gadget.sh`** + **`udev/99-usb-gadget-link.rules`** -
+  turn the USB-C port into a USB gadget (Ethernet-over-USB) and start
+  `device-agent.service` only while that link to a host is actually up.
+- **`device_agent/speech.py`** - push-to-talk recording + offline Vosk
+  speech-to-text, and espeak-ng for spoken replies. Fully local, no cost,
+  no internet needed for either.
+- **`device_agent/display_ui.py`** - the touchscreen app: hold-to-talk,
+  shows the transcript and the AI's proposed action, Confirm/Deny buttons.
+  Runs continuously via `desktop/pi-ai-console.desktop`.
+- **`device_agent/pending_actions.py`** - the approval queue shared
+  between the touchscreen and `device-agent.service`
+  (propose -> pending -> approved/denied -> executed). `cli_approve.py`
+  is a secondary, SSH-based way to approve/deny for when the screen isn't
+  handy.
+- **`device_agent/__main__.py`** - picks up approved actions while the
+  USB-C link is up and logs what it would do - the actual host-side
+  execution is the one piece still to design and build.
