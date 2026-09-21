@@ -1,4 +1,6 @@
+import base64
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 
@@ -14,10 +16,23 @@ class CompletionResult:
     model: str
 
 
+@dataclass
+class ImageInput:
+    data_b64: str
+    media_type: str  # e.g. "image/jpeg"
+
+    @classmethod
+    def from_file(cls, path: Path, media_type: str = "image/jpeg") -> "ImageInput":
+        data_b64 = base64.standard_b64encode(Path(path).read_bytes()).decode("utf-8")
+        return cls(data_b64=data_b64, media_type=media_type)
+
+
 class Provider:
     name: str
 
-    def complete(self, model: str, prompt: str, system: Optional[str], max_tokens: int) -> CompletionResult:
+    def complete(
+        self, model: str, prompt: str, system: Optional[str], max_tokens: int, image: Optional[ImageInput] = None,
+    ) -> CompletionResult:
         raise NotImplementedError
 
 
@@ -29,12 +44,31 @@ class AnthropicProvider(Provider):
         self._anthropic = anthropic
         self._client = anthropic.Anthropic()
 
-    def complete(self, model: str, prompt: str, system: Optional[str] = None, max_tokens: int = 16000) -> CompletionResult:
+    def complete(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        max_tokens: int = 16000,
+        image: Optional[ImageInput] = None,
+    ) -> CompletionResult:
         anthropic = self._anthropic
+
+        if image:
+            content = [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": image.media_type, "data": image.data_b64},
+                },
+                {"type": "text", "text": prompt},
+            ]
+        else:
+            content = prompt
+
         kwargs = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": content}],
         }
         if system:
             kwargs["system"] = system
@@ -62,12 +96,28 @@ class OpenAIProvider(Provider):
         self._openai = openai
         self._client = openai.OpenAI()
 
-    def complete(self, model: str, prompt: str, system: Optional[str] = None, max_tokens: int = 16000) -> CompletionResult:
+    def complete(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        max_tokens: int = 16000,
+        image: Optional[ImageInput] = None,
+    ) -> CompletionResult:
         openai = self._openai
+
+        if image:
+            user_content = [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{image.media_type};base64,{image.data_b64}"}},
+            ]
+        else:
+            user_content = prompt
+
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        messages.append({"role": "user", "content": user_content})
 
         try:
             response = self._client.chat.completions.create(

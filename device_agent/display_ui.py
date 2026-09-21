@@ -1,15 +1,19 @@
-"""Fullscreen touchscreen UI for the Pi. Two hold-to-talk buttons:
+"""Fullscreen touchscreen UI for the Pi. Three buttons:
 
-- "Regel festlegen" - say what the AI is allowed to do (e.g. "Du darfst
-  Dateien im Ordner Dokumente sichern"). Stored only after you confirm the
-  transcript by tapping - a misheard word must not silently become a
-  permission.
-- "Befehl geben" - say what it should do right now. Read-only requests
-  (looking something up, listing files, checking status) are always
-  proposed; anything that changes something needs a stored rule that
-  covers it, or the AI says so instead of guessing. Either way, nothing
-  is queued as approved until you tap Confirm - never by voice, so
-  background noise or a misheard word can't approve anything.
+- "Regel festlegen" (hold-to-talk) - say what the AI is allowed to do
+  (e.g. "Du darfst Dateien im Ordner Dokumente sichern"). Stored only
+  after you confirm the transcript by tapping - a misheard word must not
+  silently become a permission.
+- "Foto aufnehmen" (tap once) - waits a few seconds, turns on a warning
+  LED, and takes one photo with the Pi's camera. Shown as a preview; the
+  next command sent to the AI includes it as context, once.
+- "Befehl geben" (hold-to-talk) - say what it should do right now, with
+  the just-taken photo attached if there is one. Read-only requests
+  (looking something up, listing files, checking status, describing the
+  photo) are always proposed; anything that changes something needs a
+  stored rule that covers it, or the AI says so instead of guessing.
+  Either way, nothing is queued as approved until you tap Confirm - never
+  by voice, so background noise or a misheard word can't approve anything.
 
 Runs continuously (see desktop/pi-ai-console.desktop), independent of
 whether the USB-C link to a host is currently up. Confirming an action
@@ -21,21 +25,25 @@ acts on it, once that part is built.
 import threading
 import tkinter as tk
 
-from model_router import ModelRouter, RateLimitExceeded
+from PIL import Image, ImageTk
 
-from . import pending_actions, policy
+from model_router import ImageInput, ModelRouter, RateLimitExceeded
+
+from . import camera, pending_actions, policy
 from .speech import PushToTalkRecorder, speak
 
-def build_action_prompt() -> str:
+
+def build_action_prompt(has_image: bool) -> str:
     rules = policy.list_rules()
     rules_text = "\n".join(f"- {r}" for r in rules) if rules else "(noch keine)"
-    return (
+    prompt = (
         "Turn the user's spoken command into a short, one-sentence "
         "description of exactly one concrete action to take on their "
         "computer.\n\n"
         "Read-only actions - looking something up, listing files, "
-        "checking status, reading a file's content - are always allowed. "
-        "Propose those regardless of the rules below.\n\n"
+        "checking status, reading a file's content, describing an "
+        "attached photo - are always allowed. Propose those regardless "
+        "of the rules below.\n\n"
         "Any action that changes something (create, modify, delete, "
         "move, run, install, configure, ...) is only allowed if it is "
         "clearly covered by one of these rules the user has set:\n"
@@ -44,6 +52,12 @@ def build_action_prompt() -> str:
         "rules, respond with exactly 'NICHT ERLAUBT: <kurzer Grund>' and "
         "nothing else. Reply in German."
     )
+    if has_image:
+        prompt += (
+            "\n\nThe user just took a photo with the Pi's camera - it is "
+            "attached as context for this command."
+        )
+    return prompt
 
 
 class App:
@@ -51,8 +65,9 @@ class App:
         self.root = root
         self.router = ModelRouter()
         self.recorder = PushToTalkRecorder()
-        self._pending_kind = None   # "action" | "rule"
-        self._pending_value = None  # PendingAction | rule text
+        self._pending_kind = None    # "action" | "rule"
+        self._pending_value = None   # PendingAction | rule text
+        self._captured_image = None  # ImageInput | None, one-shot
 
         root.attributes("-fullscreen", True)
         root.configure(bg="black")
@@ -63,20 +78,29 @@ class App:
         self.transcript = tk.Label(root, text="", font=("DejaVu Sans", 18), fg="white", bg="black", wraplength=700)
         self.transcript.pack(pady=10)
 
+        self.preview_label = tk.Label(root, bg="black")
+        self.preview_label.pack(pady=5)
+
         buttons = tk.Frame(root, bg="black")
         buttons.pack(pady=20)
 
         self.rule_button = tk.Button(
-            buttons, text="Regel festlegen\n(gedrückt halten)", font=("DejaVu Sans", 18), bg="#7c3aed", fg="white",
+            buttons, text="Regel festlegen\n(gedrückt halten)", font=("DejaVu Sans", 16), bg="#7c3aed", fg="white",
         )
-        self.rule_button.pack(side="left", padx=15, ipadx=15, ipady=15)
+        self.rule_button.pack(side="left", padx=10, ipadx=10, ipady=15)
         self.rule_button.bind("<ButtonPress-1>", lambda e: self.on_talk_press("rule"))
         self.rule_button.bind("<ButtonRelease-1>", lambda e: self.on_talk_release("rule"))
 
-        self.command_button = tk.Button(
-            buttons, text="Befehl geben\n(gedrückt halten)", font=("DejaVu Sans", 18), bg="#2563eb", fg="white",
+        self.camera_button = tk.Button(
+            buttons, text="Foto aufnehmen\n(einmal tippen)", font=("DejaVu Sans", 16), bg="#ea580c", fg="white",
+            command=self.on_camera_press,
         )
-        self.command_button.pack(side="left", padx=15, ipadx=15, ipady=15)
+        self.camera_button.pack(side="left", padx=10, ipadx=10, ipady=15)
+
+        self.command_button = tk.Button(
+            buttons, text="Befehl geben\n(gedrückt halten)", font=("DejaVu Sans", 16), bg="#2563eb", fg="white",
+        )
+        self.command_button.pack(side="left", padx=10, ipadx=10, ipady=15)
         self.command_button.bind("<ButtonPress-1>", lambda e: self.on_talk_press("action"))
         self.command_button.bind("<ButtonRelease-1>", lambda e: self.on_talk_release("action"))
 
@@ -103,9 +127,10 @@ class App:
         text = "Aktuelle Regeln:\n" + "\n".join(f"- {r}" for r in rules) if rules else "Aktuelle Regeln: keine"
         self.rules_label.configure(text=text)
 
+    # -- voice (rule / command) --------------------------------------
+
     def on_talk_press(self, kind: str):
         self.status.configure(text="Höre zu ...")
-        self._active_kind = kind
         self.recorder.start()
 
     def on_talk_release(self, kind: str):
@@ -133,8 +158,12 @@ class App:
         speak(f"Neue Regel: {text}. Bestätigen oder ablehnen?")
 
     def _propose_action(self, text: str):
+        image = self._captured_image
+        self._captured_image = None  # one-shot: consumed by this command either way
+        self._clear_preview()
+
         try:
-            result = self.router.route(text, system=build_action_prompt())
+            result = self.router.route(text, system=build_action_prompt(has_image=bool(image)), image=image)
         except RateLimitExceeded:
             self.status.configure(text="Zu viele Anfragen - kurz warten")
             speak("Zu viele Anfragen, bitte kurz warten.")
@@ -157,6 +186,41 @@ class App:
         self.status.configure(text="Bestätigung erforderlich")
         self.confirm_frame.pack(pady=15)
         speak(result.text + " Bestätigen oder ablehnen?")
+
+    # -- camera --------------------------------------------------------
+
+    def on_camera_press(self):
+        self.camera_button.configure(state="disabled")
+        threading.Thread(target=self._handle_capture, daemon=True).start()
+
+    def _handle_capture(self):
+        self.status.configure(text="Aufnahme in 3 Sekunden - Licht geht an ...")
+        try:
+            path = camera.capture_photo()
+        except Exception:
+            self.status.configure(text="Kamera-Fehler")
+            speak("Die Kamera hat nicht funktioniert.")
+            self.camera_button.configure(state="normal")
+            return
+
+        self._captured_image = ImageInput.from_file(path)
+        self._show_preview(path)
+        self.status.configure(text="Bild aufgenommen - jetzt Befehl geben")
+        speak("Bild aufgenommen. Was soll ich damit tun?")
+        self.camera_button.configure(state="normal")
+
+    def _show_preview(self, path):
+        image = Image.open(path)
+        image.thumbnail((320, 240))
+        photo = ImageTk.PhotoImage(image)
+        self.preview_label.configure(image=photo)
+        self.preview_label.image = photo  # keep a reference so it isn't garbage collected
+
+    def _clear_preview(self):
+        self.preview_label.configure(image="")
+        self.preview_label.image = None
+
+    # -- confirm / deny --------------------------------------------------
 
     def on_confirm(self):
         if self._pending_kind == "rule":

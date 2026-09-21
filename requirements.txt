@@ -2,3 +2,4 @@ anthropic
 openai
 sounddevice
 vosk
+Pillow

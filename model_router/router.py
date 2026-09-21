@@ -9,7 +9,7 @@ from .config import (
     DEFAULT_TIERS,
     provider_available,
 )
-from .providers import AnthropicProvider, OpenAIProvider, Provider, ProviderError
+from .providers import AnthropicProvider, ImageInput, OpenAIProvider, Provider, ProviderError
 from .rate_limiter import RateLimiter
 
 _PROVIDER_CLASSES = {
@@ -63,6 +63,7 @@ class ModelRouter:
         tier: Optional[str] = None,
         system: Optional[str] = None,
         max_tokens: int = 16000,
+        image: Optional[ImageInput] = None,
     ) -> RoutingResult:
         chosen_tier = tier or classify_complexity(prompt)
         if chosen_tier not in self._tiers:
@@ -83,7 +84,7 @@ class ModelRouter:
                 continue
             try:
                 provider = self._get_provider(provider_name)
-                result = provider.complete(model, prompt, system=system, max_tokens=max_tokens)
+                result = provider.complete(model, prompt, system=system, max_tokens=max_tokens, image=image)
                 return RoutingResult(text=result.text, provider=result.provider, model=result.model, tier=chosen_tier)
             except ProviderError as exc:
                 errors.append(str(exc))

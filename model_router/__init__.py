@@ -1,6 +1,6 @@
 from .complexity import classify_complexity
 from .config import DEFAULT_TIERS, TierModels
-from .providers import ProviderError
+from .providers import ImageInput, ProviderError
 from .router import ModelRouter, RateLimitExceeded, RoutingResult
 
 __all__ = [
@@ -11,4 +11,5 @@ __all__ = [
     "TierModels",
     "ProviderError",
     "RateLimitExceeded",
+    "ImageInput",
 ]

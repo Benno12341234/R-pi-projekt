@@ -93,13 +93,16 @@ including "confirmed on the touchscreen, queued as approved" works;
 - **Audio:** a USB microphone and a speaker (USB, or the Pi's 3.5mm jack /
   HDMI audio). USB mics avoid the ALSA config hassle that I2S mic HATs
   need.
+- **Camera:** a Raspberry Pi Camera Module (CSI, via `picamera2`) + an LED
+  on GPIO 17 (through a resistor) as the warning light. Have a USB webcam
+  instead? Swap the capture code in `device_agent/camera.py`.
 - A Pi model with a USB-C/OTG-capable data port for the host link: Pi
   Zero 2 W, Pi 4, or Pi 5.
 
 ### Setup
 
 ```bash
-sudo apt install python3-tk espeak-ng portaudio19-dev
+sudo apt install python3-tk espeak-ng portaudio19-dev python3-picamera2 python3-gpiozero
 .venv/bin/pip install -r requirements.txt
 
 # Vosk speech-to-text model (German example - pick your language):
@@ -119,17 +122,23 @@ mkdir -p ~/.config/autostart
 cp desktop/pi-ai-console.desktop ~/.config/autostart/
 ```
 
-Reboot. The touchscreen UI starts automatically on the desktop, with two
-hold-to-talk buttons:
+Reboot. The touchscreen UI starts automatically on the desktop, with
+three buttons:
 
-- **"Regel festlegen"** - say what the AI may do, e.g. "Du darfst Dateien
-  im Ordner Dokumente sichern". Shown on screen; saved only if you tap
-  Confirm.
-- **"Befehl geben"** - say what it should do now. A read-only request
-  ("zeig mir ...", "prüfe ...") is always proposed; a request that
-  changes something (e.g. "Sichere meine Dokumente") only gets proposed
-  if a stored rule covers it, otherwise the AI says so instead of
-  guessing. Either way: tap Confirm/Deny, never spoken.
+- **"Regel festlegen"** (hold-to-talk) - say what the AI may do, e.g.
+  "Du darfst Dateien im Ordner Dokumente sichern". Shown on screen; saved
+  only if you tap Confirm.
+- **"Foto aufnehmen"** (tap once) - waits 3 seconds, then the warning LED
+  and the camera turn on and it takes one photo. Shown as a preview on
+  screen; it's attached to the next command only, then discarded.
+- **"Befehl geben"** (hold-to-talk) - say what it should do now, with the
+  just-taken photo attached if there is one (e.g. "Was siehst du auf dem
+  Bild?" or "Sichere den Ordner, den du auf dem Foto siehst"). A
+  read-only request ("zeig mir ...", "was ist das ...") is always
+  proposed; a request that changes something (e.g. "Sichere meine
+  Dokumente") only gets proposed if a stored rule covers it, otherwise
+  the AI says so instead of guessing. Either way: tap Confirm/Deny, never
+  spoken.
 
 ### What's built
 
@@ -139,11 +148,15 @@ hold-to-talk buttons:
 - **`device_agent/speech.py`** - push-to-talk recording + offline Vosk
   speech-to-text, and espeak-ng for spoken replies. Fully local, no cost,
   no internet needed for either.
+- **`device_agent/camera.py`** - waits, turns the warning LED on, and
+  takes one photo. `model_router` sends it to the AI as an image (Claude
+  and the configured GPT models both support vision), alongside the
+  spoken command.
 - **`device_agent/policy.py`** - the rules, as plain text, set via the
   "Regel festlegen" button. Handed to the AI as context before it
   proposes any action.
-- **`device_agent/display_ui.py`** - the touchscreen app: the two
-  hold-to-talk buttons above, transcript, the current rule list, and
+- **`device_agent/display_ui.py`** - the touchscreen app: the three
+  buttons above, transcript, photo preview, the current rule list, and
   Confirm/Deny. Runs continuously via `desktop/pi-ai-console.desktop`.
 - **`device_agent/pending_actions.py`** - the approval queue shared
   between the touchscreen and `device-agent.service`
