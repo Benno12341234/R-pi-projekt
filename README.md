@@ -63,18 +63,22 @@ demo script - swap it for your real entrypoint once you have one.
 
 ## USB-C Device Agent
 
-The idea: plug the Pi into one of your own computers via USB-C. You give
-it voice commands on a touchscreen attached to the Pi, the AI proposes one
-concrete action, and it only happens once you tap Confirm on that same
-screen. This is for your own computers only - not for plugging into
-devices you don't own or control.
+The idea: plug the Pi into one of your own computers via USB-C. On the
+Pi's touchscreen you say, out loud, what the AI is allowed to do (rules)
+and separately what it should do right now (commands); it proposes one
+concrete action - only if a stored rule covers it - and it only happens
+once you tap Confirm on the same screen. This is for your own computers
+only - not for plugging into devices you don't own or control.
+
+Both the rule and the command go through the same two safeguards:
+transcribed speech is shown on screen and must be **confirmed by tap**,
+never by voice - and with **no rules stored yet, the AI refuses every
+command by default** (deny-by-default, not allow-by-default).
 
 **Still open / not implemented yet:** actually reaching over the USB-C
 link and changing something on the connected host. Everything up to and
 including "confirmed on the touchscreen, queued as approved" works;
-`device_agent/__main__.py` currently only logs what it *would* run. What
-exactly the AI is allowed to do there (fixed allow-listed actions vs.
-free-form) still needs to be decided before that part gets built.
+`device_agent/__main__.py` currently only logs what it *would* run.
 
 ### Hardware
 
@@ -111,10 +115,16 @@ mkdir -p ~/.config/autostart
 cp desktop/pi-ai-console.desktop ~/.config/autostart/
 ```
 
-Reboot. The touchscreen UI starts automatically on the desktop; hold its
-button to speak a command, review the proposed action, and tap Confirm or
-Deny - never by voice, on purpose, so background noise or a misheard word
-can't approve anything by itself.
+Reboot. The touchscreen UI starts automatically on the desktop, with two
+hold-to-talk buttons:
+
+- **"Regel festlegen"** - say what the AI may do, e.g. "Du darfst Dateien
+  im Ordner Dokumente sichern". Shown on screen; saved only if you tap
+  Confirm.
+- **"Befehl geben"** - say what it should do now, e.g. "Sichere meine
+  Dokumente". The AI checks it against the stored rules and either
+  proposes one action (tap Confirm/Deny) or says the request isn't
+  covered by any rule (nothing to confirm in that case).
 
 ### What's built
 
@@ -124,9 +134,12 @@ can't approve anything by itself.
 - **`device_agent/speech.py`** - push-to-talk recording + offline Vosk
   speech-to-text, and espeak-ng for spoken replies. Fully local, no cost,
   no internet needed for either.
-- **`device_agent/display_ui.py`** - the touchscreen app: hold-to-talk,
-  shows the transcript and the AI's proposed action, Confirm/Deny buttons.
-  Runs continuously via `desktop/pi-ai-console.desktop`.
+- **`device_agent/policy.py`** - the rules, as plain text, set via the
+  "Regel festlegen" button. Handed to the AI as context before it
+  proposes any action.
+- **`device_agent/display_ui.py`** - the touchscreen app: the two
+  hold-to-talk buttons above, transcript, the current rule list, and
+  Confirm/Deny. Runs continuously via `desktop/pi-ai-console.desktop`.
 - **`device_agent/pending_actions.py`** - the approval queue shared
   between the touchscreen and `device-agent.service`
   (propose -> pending -> approved/denied -> executed). `cli_approve.py`
