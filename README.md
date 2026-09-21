@@ -66,14 +66,18 @@ demo script - swap it for your real entrypoint once you have one.
 The idea: plug the Pi into one of your own computers via USB-C. On the
 Pi's touchscreen you say, out loud, what the AI is allowed to do (rules)
 and separately what it should do right now (commands); it proposes one
-concrete action - only if a stored rule covers it - and it only happens
-once you tap Confirm on the same screen. This is for your own computers
-only - not for plugging into devices you don't own or control.
+concrete action and it only happens once you tap Confirm on the same
+screen. This is for your own computers only - not for plugging into
+devices you don't own or control.
 
-Both the rule and the command go through the same two safeguards:
-transcribed speech is shown on screen and must be **confirmed by tap**,
-never by voice - and with **no rules stored yet, the AI refuses every
-command by default** (deny-by-default, not allow-by-default).
+Two safeguards apply to every proposal:
+- Transcribed speech is shown on screen and must be **confirmed by tap**,
+  never by voice.
+- **Read-only requests are always allowed** (looking something up,
+  listing files, checking status). **Anything that changes something
+  needs a stored rule that covers it** - with no matching rule, the AI
+  refuses instead of guessing (deny-by-default for changes, not for
+  reads).
 
 **Still open / not implemented yet:** actually reaching over the USB-C
 link and changing something on the connected host. Everything up to and
@@ -121,10 +125,11 @@ hold-to-talk buttons:
 - **"Regel festlegen"** - say what the AI may do, e.g. "Du darfst Dateien
   im Ordner Dokumente sichern". Shown on screen; saved only if you tap
   Confirm.
-- **"Befehl geben"** - say what it should do now, e.g. "Sichere meine
-  Dokumente". The AI checks it against the stored rules and either
-  proposes one action (tap Confirm/Deny) or says the request isn't
-  covered by any rule (nothing to confirm in that case).
+- **"Befehl geben"** - say what it should do now. A read-only request
+  ("zeig mir ...", "prüfe ...") is always proposed; a request that
+  changes something (e.g. "Sichere meine Dokumente") only gets proposed
+  if a stored rule covers it, otherwise the AI says so instead of
+  guessing. Either way: tap Confirm/Deny, never spoken.
 
 ### What's built
 

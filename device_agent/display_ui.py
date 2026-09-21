@@ -4,11 +4,12 @@
   Dateien im Ordner Dokumente sichern"). Stored only after you confirm the
   transcript by tapping - a misheard word must not silently become a
   permission.
-- "Befehl geben" - say what it should do right now. The AI checks the
-  request against the stored rules and proposes exactly one action, or
-  says the request isn't covered by any rule. Either way, nothing is
-  queued as approved until you tap Confirm - never by voice, so background
-  noise or a misheard word can't approve anything.
+- "Befehl geben" - say what it should do right now. Read-only requests
+  (looking something up, listing files, checking status) are always
+  proposed; anything that changes something needs a stored rule that
+  covers it, or the AI says so instead of guessing. Either way, nothing
+  is queued as approved until you tap Confirm - never by voice, so
+  background noise or a misheard word can't approve anything.
 
 Runs continuously (see desktop/pi-ai-console.desktop), independent of
 whether the USB-C link to a host is currently up. Confirming an action
@@ -25,28 +26,23 @@ from model_router import ModelRouter, RateLimitExceeded
 from . import pending_actions, policy
 from .speech import PushToTalkRecorder, speak
 
-NO_RULES_REPLY = "NICHT ERLAUBT: Es sind noch keine Regeln festgelegt."
-
-
 def build_action_prompt() -> str:
     rules = policy.list_rules()
-    if not rules:
-        return (
-            "The user has not set any rules yet for what you may do on "
-            "their computer. Since nothing is explicitly allowed, do not "
-            f"propose any action - respond with exactly '{NO_RULES_REPLY}' "
-            "and nothing else."
-        )
-    rules_text = "\n".join(f"- {r}" for r in rules)
+    rules_text = "\n".join(f"- {r}" for r in rules) if rules else "(noch keine)"
     return (
-        "The user has set these rules for what you may do on their "
-        f"computer:\n{rules_text}\n\n"
         "Turn the user's spoken command into a short, one-sentence "
         "description of exactly one concrete action to take on their "
-        "computer - but only if it is clearly covered by the rules above. "
-        "If the command is unclear, or is not covered by / conflicts with "
-        "the rules, respond with exactly 'NICHT ERLAUBT: <kurzer Grund>' "
-        "and nothing else. Reply in German."
+        "computer.\n\n"
+        "Read-only actions - looking something up, listing files, "
+        "checking status, reading a file's content - are always allowed. "
+        "Propose those regardless of the rules below.\n\n"
+        "Any action that changes something (create, modify, delete, "
+        "move, run, install, configure, ...) is only allowed if it is "
+        "clearly covered by one of these rules the user has set:\n"
+        f"{rules_text}\n\n"
+        "If a change is unclear, or not covered by / conflicts with the "
+        "rules, respond with exactly 'NICHT ERLAUBT: <kurzer Grund>' and "
+        "nothing else. Reply in German."
     )
 
 
