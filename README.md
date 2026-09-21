@@ -93,9 +93,11 @@ including "confirmed on the touchscreen, queued as approved" works;
 - **Audio:** a USB microphone and a speaker (USB, or the Pi's 3.5mm jack /
   HDMI audio). USB mics avoid the ALSA config hassle that I2S mic HATs
   need.
-- **Camera:** a Raspberry Pi Camera Module (CSI, via `picamera2`) + an LED
-  on GPIO 17 (through a resistor) as the warning light. Have a USB webcam
-  instead? Swap the capture code in `device_agent/camera.py`.
+- **Camera:** a Raspberry Pi Camera Module (CSI, via `picamera2`) + two
+  LEDs (each through a resistor): a small one on GPIO 17 as the warning
+  light, and a brighter one on GPIO 27 that lights up the subject so the
+  photo is still readable in a dark room. Have a USB webcam instead? Swap
+  the capture code in `device_agent/camera.py`.
 - A Pi model with a USB-C/OTG-capable data port for the host link: Pi
   Zero 2 W, Pi 4, or Pi 5.
 
@@ -129,8 +131,9 @@ three buttons:
   "Du darfst Dateien im Ordner Dokumente sichern". Shown on screen; saved
   only if you tap Confirm.
 - **"Foto aufnehmen"** (tap once) - waits 3 seconds, then the warning LED
-  and the camera turn on and it takes one photo. Shown as a preview on
-  screen; it's attached to the next command only, then discarded.
+  and a brighter reading light turn on (so it still works in a dark room)
+  and it takes one photo. Shown as a preview on screen; it's attached to
+  the next command only, then discarded.
 - **"Befehl geben"** (hold-to-talk) - say what it should do now, with the
   just-taken photo attached if there is one (e.g. "Was siehst du auf dem
   Bild?" or "Sichere den Ordner, den du auf dem Foto siehst"). A
@@ -148,10 +151,10 @@ three buttons:
 - **`device_agent/speech.py`** - push-to-talk recording + offline Vosk
   speech-to-text, and espeak-ng for spoken replies. Fully local, no cost,
   no internet needed for either.
-- **`device_agent/camera.py`** - waits, turns the warning LED on, and
-  takes one photo. `model_router` sends it to the AI as an image (Claude
-  and the configured GPT models both support vision), alongside the
-  spoken command.
+- **`device_agent/camera.py`** - waits, turns the warning LED and reading
+  light on, and takes one photo. `model_router` sends it to the AI as an
+  image (Claude and the configured GPT models both support vision),
+  alongside the spoken command.
 - **`device_agent/policy.py`** - the rules, as plain text, set via the
   "Regel festlegen" button. Handed to the AI as context before it
   proposes any action.
