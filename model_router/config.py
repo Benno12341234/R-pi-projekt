@@ -20,6 +20,12 @@ DEFAULT_TIERS = {
 }
 
 
+# Cost guard: refuse to make more than this many paid API calls per window.
+# Override via env vars if 60/hour is too tight or too loose for your use case.
+DEFAULT_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("MODEL_ROUTER_RATE_LIMIT_MAX_REQUESTS", "60"))
+DEFAULT_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("MODEL_ROUTER_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+
+
 def provider_available(provider: str) -> bool:
     if provider == "anthropic":
         return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
