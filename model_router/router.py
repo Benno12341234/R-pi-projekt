@@ -69,12 +69,6 @@ class ModelRouter:
         if chosen_tier not in self._tiers:
             raise ValueError(f"unknown tier '{chosen_tier}', expected one of {list(self._tiers)}")
 
-        if not self._rate_limiter.allow():
-            raise RateLimitExceeded(
-                f"cost guard: more than {self._rate_limiter.max_requests} requests in "
-                f"{self._rate_limiter.per_seconds:.0f}s - refusing to call a paid API"
-            )
-
         tier_models = self._tiers[chosen_tier]
         errors = []
 
@@ -82,6 +76,14 @@ class ModelRouter:
             model = getattr(tier_models, provider_name, None)
             if not model or not provider_available(provider_name):
                 continue
+            # Checked per actual provider attempt, not once per route() call:
+            # a single route() can fall through to a second provider, and
+            # that is a second real paid API call the cost guard must count.
+            if not self._rate_limiter.allow():
+                raise RateLimitExceeded(
+                    f"cost guard: more than {self._rate_limiter.max_requests} requests in "
+                    f"{self._rate_limiter.per_seconds:.0f}s - refusing to call a paid API"
+                )
             try:
                 provider = self._get_provider(provider_name)
                 result = provider.complete(model, prompt, system=system, max_tokens=max_tokens, image=image)

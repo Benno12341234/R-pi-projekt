@@ -4,16 +4,19 @@ Approval happens either on the touchscreen (display_ui.py) or via SSH
 (cli_approve.py) - both just call resolve(). Once approved, __main__.py
 (running only while the USB-C link is up) picks the action up and marks it
 executed. Actually acting on the connected host is still not implemented -
-see README.md "USB-C Device Agent" for what's open."""
+see README.md "USB-C Device Agent" for what's open.
 
-import json
+Storage (path, atomic writes, corruption fallback) is shared with
+policy.py - see _store.py."""
+
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import List, Optional
 
-_STORE = Path("/var/lib/device-agent/pending_actions.json")
+from . import _store
+
+_FILE = "pending_actions.json"
 
 
 @dataclass
@@ -25,14 +28,11 @@ class PendingAction:
 
 
 def _load() -> List[dict]:
-    if not _STORE.exists():
-        return []
-    return json.loads(_STORE.read_text())
+    return _store.load(_FILE, default=[])
 
 
 def _save(actions: List[dict]) -> None:
-    _STORE.parent.mkdir(parents=True, exist_ok=True)
-    _STORE.write_text(json.dumps(actions, indent=2))
+    _store.save(_FILE, actions)
 
 
 def propose(description: str) -> PendingAction:

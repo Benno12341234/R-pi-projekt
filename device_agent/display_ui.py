@@ -65,9 +65,10 @@ class App:
         self.root = root
         self.router = ModelRouter()
         self.recorder = PushToTalkRecorder()
-        self._pending_kind = None    # "action" | "rule"
-        self._pending_value = None   # PendingAction | rule text
-        self._captured_image = None  # ImageInput | None, one-shot
+        self._pending_kind = None      # "action" | "rule"
+        self._pending_value = None     # PendingAction | rule text
+        self._captured_image = None    # ImageInput | None, one-shot
+        self._recording_owner = None   # "rule" | "action" | None - which button, if any, is currently recording
 
         root.attributes("-fullscreen", True)
         root.configure(bg="black")
@@ -129,19 +130,33 @@ class App:
 
     # -- voice (rule / command) --------------------------------------
 
+    def _ui(self, fn) -> None:
+        """Marshal a widget mutation onto the Tk main thread. Tkinter/Tcl is
+        not thread-safe, so any Label/Button/Frame call made directly from a
+        background thread (as _handle_recording/_handle_capture below are)
+        can corrupt Tk's internal state or crash the app; every such call
+        must instead go through root.after()."""
+        self.root.after(0, fn)
+
     def on_talk_press(self, kind: str):
+        if self._recording_owner is not None:
+            return  # the other talk button is already recording - ignore
+        self._recording_owner = kind
         self.status.configure(text="Höre zu ...")
         self.recorder.start()
 
     def on_talk_release(self, kind: str):
+        if self._recording_owner != kind:
+            return  # this press never started a recording (see on_talk_press) - nothing to stop
+        self._recording_owner = None
         self.status.configure(text="Verarbeite ...")
         threading.Thread(target=self._handle_recording, args=(kind,), daemon=True).start()
 
     def _handle_recording(self, kind: str):
         text = self.recorder.stop()
-        self.transcript.configure(text=text or "(nichts verstanden)")
+        self._ui(lambda: self.transcript.configure(text=text or "(nichts verstanden)"))
         if not text:
-            self.status.configure(text="Bereit")
+            self._ui(lambda: self.status.configure(text="Bereit"))
             return
 
         if kind == "rule":
@@ -152,39 +167,39 @@ class App:
     def _propose_rule(self, text: str):
         self._pending_kind = "rule"
         self._pending_value = text
-        self.proposal_label.configure(text=f"Neue Regel: {text}")
-        self.status.configure(text="Regel bestätigen?")
-        self.confirm_frame.pack(pady=15)
+        self._ui(lambda: self.proposal_label.configure(text=f"Neue Regel: {text}"))
+        self._ui(lambda: self.status.configure(text="Regel bestätigen?"))
+        self._ui(lambda: self.confirm_frame.pack(pady=15))
         speak(f"Neue Regel: {text}. Bestätigen oder ablehnen?")
 
     def _propose_action(self, text: str):
         image = self._captured_image
         self._captured_image = None  # one-shot: consumed by this command either way
-        self._clear_preview()
+        self._ui(self._clear_preview)
 
         try:
             result = self.router.route(text, system=build_action_prompt(has_image=bool(image)), image=image)
         except RateLimitExceeded:
-            self.status.configure(text="Zu viele Anfragen - kurz warten")
+            self._ui(lambda: self.status.configure(text="Zu viele Anfragen - kurz warten"))
             speak("Zu viele Anfragen, bitte kurz warten.")
             return
         except Exception:
-            self.status.configure(text="Fehler bei der KI-Anfrage")
+            self._ui(lambda: self.status.configure(text="Fehler bei der KI-Anfrage"))
             speak("Da ist etwas schiefgelaufen.")
             return
 
         if result.text.strip().upper().startswith("NICHT ERLAUBT"):
-            self.status.configure(text="Nicht erlaubt")
-            self.transcript.configure(text=result.text)
+            self._ui(lambda: self.status.configure(text="Nicht erlaubt"))
+            self._ui(lambda: self.transcript.configure(text=result.text))
             speak(result.text)
             return
 
         action = pending_actions.propose(result.text)
         self._pending_kind = "action"
         self._pending_value = action
-        self.proposal_label.configure(text=result.text)
-        self.status.configure(text="Bestätigung erforderlich")
-        self.confirm_frame.pack(pady=15)
+        self._ui(lambda: self.proposal_label.configure(text=result.text))
+        self._ui(lambda: self.status.configure(text="Bestätigung erforderlich"))
+        self._ui(lambda: self.confirm_frame.pack(pady=15))
         speak(result.text + " Bestätigen oder ablehnen?")
 
     # -- camera --------------------------------------------------------
@@ -194,20 +209,20 @@ class App:
         threading.Thread(target=self._handle_capture, daemon=True).start()
 
     def _handle_capture(self):
-        self.status.configure(text="Aufnahme in 3 Sekunden - Licht geht an ...")
+        self._ui(lambda: self.status.configure(text="Aufnahme in 3 Sekunden - Licht geht an ..."))
         try:
             path = camera.capture_photo()
         except Exception:
-            self.status.configure(text="Kamera-Fehler")
+            self._ui(lambda: self.status.configure(text="Kamera-Fehler"))
             speak("Die Kamera hat nicht funktioniert.")
-            self.camera_button.configure(state="normal")
+            self._ui(lambda: self.camera_button.configure(state="normal"))
             return
 
         self._captured_image = ImageInput.from_file(path)
-        self._show_preview(path)
-        self.status.configure(text="Bild aufgenommen - jetzt Befehl geben")
+        self._ui(lambda: self._show_preview(path))
+        self._ui(lambda: self.status.configure(text="Bild aufgenommen - jetzt Befehl geben"))
         speak("Bild aufgenommen. Was soll ich damit tun?")
-        self.camera_button.configure(state="normal")
+        self._ui(lambda: self.camera_button.configure(state="normal"))
 
     def _show_preview(self, path):
         image = Image.open(path)
