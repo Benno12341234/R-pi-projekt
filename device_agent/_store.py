@@ -11,15 +11,43 @@ Writes go to a temp file in the same directory and are then renamed into
 place (os.replace is atomic on POSIX), so a crash or power loss mid-write -
 plausible on a Pi with no UPS - can't leave a truncated/corrupt JSON file
 that then breaks every future read.
+
+That alone doesn't protect a read-modify-write sequence: the touchscreen
+UI and device-agent.service's poll loop are separate processes reading
+and writing the same file. Wrap load() + mutate + save() in `with
+locked(name):` (see pending_actions.py) so the whole sequence is one
+critical section - otherwise two processes can each load the same
+snapshot, mutate different entries, and the second save() to land wins,
+silently discarding the first one's change (lost update).
 """
 
+import fcntl
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 _DIR = Path.home() / ".local" / "state" / "device-agent"
+
+
+@contextmanager
+def locked(name: str) -> Iterator[None]:
+    """Exclusive file lock for the given store, held for the duration of
+    the `with` block. Blocks any other process or thread also calling
+    `locked(name)` until this one releases it (including on exception,
+    via the `finally`) - each call opens its own file descriptor, so this
+    serializes correctly whether the contention is cross-process or
+    cross-thread."""
+    _DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = _DIR / f".{name}.lock"
+    with open(lock_path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def load(name: str, default: Any) -> Any:

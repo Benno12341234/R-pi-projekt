@@ -20,6 +20,7 @@ def list_rules() -> List[str]:
 
 
 def add_rule(text: str) -> None:
-    rules = list_rules()
-    rules.append(text)
-    _store.save(_FILE, rules)
+    with _store.locked(_FILE):
+        rules = list_rules()
+        rules.append(text)
+        _store.save(_FILE, rules)

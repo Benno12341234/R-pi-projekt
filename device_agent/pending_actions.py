@@ -7,7 +7,11 @@ executed. Actually acting on the connected host is still not implemented -
 see README.md "USB-C Device Agent" for what's open.
 
 Storage (path, atomic writes, corruption fallback) is shared with
-policy.py - see _store.py."""
+policy.py - see _store.py. Every read-modify-write below runs under
+_store.locked() - the touchscreen (in-process) and __main__.py's poll
+loop (a separate process) both touch this file, and without a lock
+spanning the whole load+mutate+save, one of them landing second could
+silently overwrite the other's change."""
 
 import time
 import uuid
@@ -42,9 +46,10 @@ def propose(description: str) -> PendingAction:
         status="pending",
         created_at=time.time(),
     )
-    actions = _load()
-    actions.append(asdict(action))
-    _save(actions)
+    with _store.locked(_FILE):
+        actions = _load()
+        actions.append(asdict(action))
+        _save(actions)
     return action
 
 
@@ -57,18 +62,20 @@ def list_approved() -> List[PendingAction]:
 
 
 def resolve(action_id: str, approved: bool) -> Optional[PendingAction]:
-    actions = _load()
-    for a in actions:
-        if a["id"] == action_id:
-            a["status"] = "approved" if approved else "denied"
-            _save(actions)
-            return PendingAction(**a)
+    with _store.locked(_FILE):
+        actions = _load()
+        for a in actions:
+            if a["id"] == action_id:
+                a["status"] = "approved" if approved else "denied"
+                _save(actions)
+                return PendingAction(**a)
     return None
 
 
 def mark_executed(action_id: str) -> None:
-    actions = _load()
-    for a in actions:
-        if a["id"] == action_id:
-            a["status"] = "executed"
-    _save(actions)
+    with _store.locked(_FILE):
+        actions = _load()
+        for a in actions:
+            if a["id"] == action_id:
+                a["status"] = "executed"
+        _save(actions)
